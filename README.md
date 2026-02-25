@@ -2,6 +2,7 @@
 
 A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits, and token costs — all in one place.
 
+
 ```
  Claude (oauth)
   Session   72% remaining [████████░░░░]
@@ -37,6 +38,12 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 - **JSON output** — machine-readable output for scripts and dashboards
 
 ## Installation
+
+### From crates.io
+
+```sh
+cargo install aitracker
+```
 
 ### From source
 
@@ -292,6 +299,10 @@ cargo run -- usage --all
 2. Add the variant to `Provider` enum in `src/core/providers/mod.rs`
 3. Wire it into `dispatch_fetch()` in `src/cli/usage_cmd.rs`
 4. Add a default config entry in `src/core/config.rs`
+
+## Acknowledgements
+
+Inspired by [CodexBar](https://github.com/steipete/CodexBar), built for environments where a macOS menu bar isn't available — VMs, remote servers, SSH sessions, and headless setups.
 
 ## License
 
