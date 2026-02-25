@@ -1,0 +1,29 @@
+[package]
+name = "aitracker"
+version = "0.2.0"
+edition = "2021"
+description = "AI provider usage tracking CLI"
+license = "MIT"
+repository = "https://github.com/j0nl1/aitracker"
+homepage = "https://github.com/j0nl1/aitracker"
+keywords = ["ai", "usage", "tracking", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ait"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+colored = "2"
+dirs = "5"
+thiserror = "2"
+anyhow = "1"
+base64 = "0.22"
+crossterm = "0.28"
