@@ -224,7 +224,6 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `CLAUDE_CONFIG_DIR` | Custom Claude config directory |
 | `MINIMAX_API_HOST` | Custom MiniMax API host |
 | `Z_AI_API_HOST` | Custom Zai API host |
-| `Z_AI_QUOTA_URL` | Full URL override for Zai quota endpoint |
 
 ### General
 
@@ -282,7 +281,7 @@ src/
 ## Development
 
 ```sh
-# Run tests (215 tests)
+# Run tests (231 tests)
 cargo test
 
 # Build release binary

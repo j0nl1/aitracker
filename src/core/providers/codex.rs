@@ -136,6 +136,11 @@ pub async fn fetch() -> Result<FetchResult> {
     let config = read_codex_config();
     let url = resolve_usage_url(config.chatgpt_base_url.as_deref());
 
+    crate::core::providers::fetch::validate_endpoint(&url, "Codex")?;
+    if config.chatgpt_base_url.is_some() {
+        eprintln!("codex: using custom endpoint: {}", url);
+    }
+
     let client = reqwest::Client::new();
     let mut request = client
         .get(&url)

@@ -31,8 +31,8 @@ struct ZaiResponse {
 }
 
 fn resolve_url() -> String {
-    if let Ok(full_url) = std::env::var("Z_AI_QUOTA_URL") {
-        return full_url;
+    if std::env::var("Z_AI_QUOTA_URL").is_ok() {
+        eprintln!("zai: Z_AI_QUOTA_URL is deprecated and ignored. Use Z_AI_API_HOST instead.");
     }
     let host = std::env::var("Z_AI_API_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string());
     format!("https://{}{}", host, PATH)
@@ -102,10 +102,16 @@ pub async fn fetch() -> Result<FetchResult> {
     let api_key = std::env::var("Z_AI_API_KEY").context("Z_AI_API_KEY env var not set")?;
 
     let url = resolve_url();
+    crate::core::providers::fetch::validate_endpoint(&url, "Zai")?;
+    if std::env::var("Z_AI_API_HOST").is_ok() {
+        eprintln!("zai: using custom host via Z_AI_API_HOST");
+    }
+
     let response = match try_fetch(&url, &api_key).await {
         Ok(resp) => resp,
         Err(_) => {
             let fallback = fallback_url();
+            crate::core::providers::fetch::validate_endpoint(&fallback, "Zai")?;
             try_fetch(&fallback, &api_key).await?
         }
     };
@@ -263,10 +269,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_url_full_override() {
-        // Test that a full URL override works as expected
-        let full_url = "https://my.custom.url/path";
-        assert_eq!(full_url, "https://my.custom.url/path");
+    fn resolve_url_ignores_deprecated_quota_url() {
+        // Z_AI_QUOTA_URL is deprecated and ignored — resolve_url always
+        // builds the URL from host + PATH regardless.
+        let url = format!("https://{}{}", DEFAULT_HOST, PATH);
+        assert!(url.starts_with("https://"));
+        assert!(url.contains("api.z.ai"));
     }
 
     #[test]

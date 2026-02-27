@@ -121,13 +121,7 @@ fn extract_last_number(s: &str) -> Option<f64> {
 
 /// Fetch usage data by running the `kiro-cli` command.
 pub async fn fetch() -> Result<FetchResult> {
-    // Check if kiro-cli exists in PATH
-    let which_result = std::process::Command::new("which")
-        .arg("kiro-cli")
-        .output()
-        .context("Failed to check for kiro-cli")?;
-
-    if !which_result.status.success() {
+    if crate::core::process::which("kiro-cli").is_none() {
         anyhow::bail!("kiro-cli not found in PATH");
     }
 

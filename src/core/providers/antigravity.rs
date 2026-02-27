@@ -115,6 +115,13 @@ pub async fn fetch() -> Result<FetchResult> {
         port
     );
 
+    if !url.starts_with("https://127.0.0.1:") && !url.starts_with("https://[::1]:") {
+        anyhow::bail!(
+            "Antigravity: refusing to disable TLS verification for non-localhost: {}",
+            url
+        );
+    }
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()

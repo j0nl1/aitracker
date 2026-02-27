@@ -100,10 +100,16 @@ pub async fn fetch() -> Result<FetchResult> {
         std::env::var("MINIMAX_API_TOKEN").context("MINIMAX_API_TOKEN env var not set")?;
 
     let url = resolve_url();
+    crate::core::providers::fetch::validate_endpoint(&url, "MiniMax")?;
+    if std::env::var("MINIMAX_API_HOST").is_ok() {
+        eprintln!("minimax: using custom host via MINIMAX_API_HOST");
+    }
+
     let response = match try_fetch(&url, &token).await {
         Ok(resp) => resp,
         Err(_) => {
             let fallback = fallback_url();
+            crate::core::providers::fetch::validate_endpoint(&fallback, "MiniMax")?;
             try_fetch(&fallback, &token).await?
         }
     };
