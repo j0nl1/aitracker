@@ -1,6 +1,6 @@
 [package]
 name = "aitracker"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "AI provider usage tracking CLI"
 license = "MIT"
@@ -27,3 +27,4 @@ thiserror = "2"
 anyhow = "1"
 base64 = "0.22"
 crossterm = "0.28"
+skillinstaller = { version = "0.1.0", features = ["interactive"] }

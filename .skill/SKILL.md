@@ -1,3 +1,8 @@
+---
+name: aitracker
+description: Use this skill when you need commands and workflows for the `ait` CLI to track AI provider usage, limits, credits, and token costs.
+---
+
 # ait — AI Provider Usage Tracking CLI
 
 `ait` is a terminal CLI for tracking AI provider usage, rate limits, credits, and token costs. The binary is built with `cargo build` from the `ait/` crate directory.

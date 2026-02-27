@@ -78,6 +78,9 @@ ait usage --status
 # JSON output
 ait --json
 ait --json --pretty
+
+# Install project skill (interactive or flags)
+ait install-skill
 ```
 
 ## Commands
@@ -107,6 +110,14 @@ ait config edit              # Edit enabled providers interactively
 ait config check             # Validate existing config
 ait config add <provider>    # Enable a provider (non-interactive)
 ait config remove <provider> # Disable a provider (non-interactive)
+```
+
+### `ait install-skill`
+
+Install the embedded `./.skill` directory into your agents skills directory.
+
+```sh
+ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user>] [--method <symlink|copy>] [--project-root <path>] [--force]
 ```
 
 ### Global flags

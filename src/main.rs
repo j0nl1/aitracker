@@ -2,6 +2,10 @@ mod cli;
 mod core;
 
 use clap::{Parser, Subcommand};
+use skillinstaller::rust_embed;
+use skillinstaller::{
+    InstallSkillArgs, install_interactive, load_embedded_skill, print_install_result,
+};
 
 #[derive(Parser)]
 #[command(name = "ait", about = "AI provider usage tracking CLI", version)]
@@ -55,6 +59,8 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Install this project's Codex skill into an agents skills directory
+    InstallSkill(InstallSkillArgs),
 }
 
 #[derive(Subcommand)]
@@ -76,6 +82,10 @@ enum ConfigAction {
         provider: String,
     },
 }
+
+#[derive(rust_embed::RustEmbed)]
+#[folder = ".skill"]
+struct SkillAssets;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -117,6 +127,11 @@ async fn main() -> anyhow::Result<()> {
                 cli::config_cmd::remove(&provider, &output_opts)?
             }
         },
+        Some(Commands::InstallSkill(args)) => {
+            let source = load_embedded_skill::<SkillAssets>();
+            let result = install_interactive(source, &args)?;
+            print_install_result(&result);
+        }
     }
 
     Ok(())
