@@ -1,25 +1,47 @@
 pub mod amp;
 pub mod antigravity;
 pub mod augment;
+pub mod azure_openai;
 pub mod claude;
+pub mod clawrouter;
+pub mod chutes;
+pub mod codebuff;
 pub mod codex;
 pub mod copilot;
+pub mod crof;
 pub mod cursor;
+pub mod deepgram;
+pub mod deepinfra;
+pub mod deepseek;
+pub mod doubao;
+pub mod elevenlabs;
 pub mod factory;
 pub mod fetch;
+pub mod fireworks;
 pub mod gemini;
+pub mod groqcloud;
+pub mod ibm_bob;
 pub mod jetbrains;
 pub mod kimi;
 pub mod kimi_k2;
 pub mod kiro;
+pub mod litellm;
+pub mod llm_proxy;
 pub mod minimax;
+pub mod moonshot;
+pub mod neuralwatt;
 pub mod ollama;
 pub mod opencode;
+pub mod openai;
 pub mod openrouter;
+pub mod poe;
 pub mod synthetic;
+pub mod venice;
 pub mod vertex_ai;
 pub mod warp;
+pub mod xai;
 pub mod zai;
+pub mod zenmux;
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +69,28 @@ pub enum Provider {
     Antigravity,
     Synthetic,
     VertexAi,
+    OpenAi,
+    AzureOpenAi,
+    DeepSeek,
+    Fireworks,
+    DeepInfra,
+    Moonshot,
+    Venice,
+    Codebuff,
+    Crof,
+    Doubao,
+    GroqCloud,
+    LlmProxy,
+    ClawRouter,
+    LiteLlm,
+    Deepgram,
+    Poe,
+    Chutes,
+    NeuralWatt,
+    ZenMux,
+    Xai,
+    IbmBob,
+    ElevenLabs,
 }
 
 impl Provider {
@@ -73,6 +117,28 @@ impl Provider {
             "antigravity" => Some(Self::Antigravity),
             "synthetic" => Some(Self::Synthetic),
             "vertex_ai" | "vertex-ai" | "vertexai" => Some(Self::VertexAi),
+            "openai" => Some(Self::OpenAi),
+            "azure_openai" | "azure-openai" => Some(Self::AzureOpenAi),
+            "deepseek" => Some(Self::DeepSeek),
+            "fireworks" => Some(Self::Fireworks),
+            "deepinfra" => Some(Self::DeepInfra),
+            "moonshot" => Some(Self::Moonshot),
+            "venice" => Some(Self::Venice),
+            "codebuff" => Some(Self::Codebuff),
+            "crof" => Some(Self::Crof),
+            "doubao" => Some(Self::Doubao),
+            "groqcloud" | "groq" => Some(Self::GroqCloud),
+            "llm_proxy" | "llm-proxy" => Some(Self::LlmProxy),
+            "clawrouter" => Some(Self::ClawRouter),
+            "litellm" => Some(Self::LiteLlm),
+            "deepgram" => Some(Self::Deepgram),
+            "poe" => Some(Self::Poe),
+            "chutes" => Some(Self::Chutes),
+            "neuralwatt" => Some(Self::NeuralWatt),
+            "zenmux" => Some(Self::ZenMux),
+            "xai" => Some(Self::Xai),
+            "ibm_bob" | "ibm-bob" => Some(Self::IbmBob),
+            "elevenlabs" => Some(Self::ElevenLabs),
             _ => None,
         }
     }
@@ -100,6 +166,28 @@ impl Provider {
             Self::Antigravity => "antigravity",
             Self::Synthetic => "synthetic",
             Self::VertexAi => "vertex_ai",
+            Self::OpenAi => "openai",
+            Self::AzureOpenAi => "azure_openai",
+            Self::DeepSeek => "deepseek",
+            Self::Fireworks => "fireworks",
+            Self::DeepInfra => "deepinfra",
+            Self::Moonshot => "moonshot",
+            Self::Venice => "venice",
+            Self::Codebuff => "codebuff",
+            Self::Crof => "crof",
+            Self::Doubao => "doubao",
+            Self::GroqCloud => "groqcloud",
+            Self::LlmProxy => "llm_proxy",
+            Self::ClawRouter => "clawrouter",
+            Self::LiteLlm => "litellm",
+            Self::Deepgram => "deepgram",
+            Self::Poe => "poe",
+            Self::Chutes => "chutes",
+            Self::NeuralWatt => "neuralwatt",
+            Self::ZenMux => "zenmux",
+            Self::Xai => "xai",
+            Self::IbmBob => "ibm_bob",
+            Self::ElevenLabs => "elevenlabs",
         }
     }
 
@@ -126,6 +214,28 @@ impl Provider {
             Self::Antigravity => "Antigravity",
             Self::Synthetic => "Synthetic",
             Self::VertexAi => "Vertex AI",
+            Self::OpenAi => "OpenAI",
+            Self::AzureOpenAi => "Azure OpenAI",
+            Self::DeepSeek => "DeepSeek",
+            Self::Fireworks => "Fireworks",
+            Self::DeepInfra => "DeepInfra",
+            Self::Moonshot => "Moonshot",
+            Self::Venice => "Venice",
+            Self::Codebuff => "Codebuff",
+            Self::Crof => "Crof",
+            Self::Doubao => "Doubao",
+            Self::GroqCloud => "GroqCloud",
+            Self::LlmProxy => "LLM Proxy",
+            Self::ClawRouter => "ClawRouter",
+            Self::LiteLlm => "LiteLLM",
+            Self::Deepgram => "Deepgram",
+            Self::Poe => "Poe",
+            Self::Chutes => "Chutes",
+            Self::NeuralWatt => "NeuralWatt",
+            Self::ZenMux => "ZenMux",
+            Self::Xai => "xAI",
+            Self::IbmBob => "IBM Bob",
+            Self::ElevenLabs => "ElevenLabs",
         }
     }
 
@@ -181,6 +291,28 @@ impl Provider {
             Provider::JetBrains,
             Provider::Antigravity,
             Provider::Synthetic,
+            Provider::OpenAi,
+            Provider::AzureOpenAi,
+            Provider::DeepSeek,
+            Provider::Fireworks,
+            Provider::DeepInfra,
+            Provider::Moonshot,
+            Provider::Venice,
+            Provider::Codebuff,
+            Provider::Crof,
+            Provider::Doubao,
+            Provider::GroqCloud,
+            Provider::LlmProxy,
+            Provider::ClawRouter,
+            Provider::LiteLlm,
+            Provider::Deepgram,
+            Provider::Poe,
+            Provider::Chutes,
+            Provider::NeuralWatt,
+            Provider::ZenMux,
+            Provider::Xai,
+            Provider::IbmBob,
+            Provider::ElevenLabs,
             // Stubs
             Provider::Cursor,
             Provider::Ollama,
@@ -221,6 +353,28 @@ impl Provider {
             Self::JetBrains => "IDE config files",
             Self::Antigravity => "language server process",
             Self::Synthetic => "SYNTHETIC_API_KEY",
+            Self::OpenAi => "OPENAI_API_KEY",
+            Self::AzureOpenAi => "AZURE_OPENAI_API_KEY + endpoint",
+            Self::DeepSeek => "DEEPSEEK_API_KEY",
+            Self::Fireworks => "FIREWORKS_API_KEY + account slug",
+            Self::DeepInfra => "DEEPINFRA_API_KEY",
+            Self::Moonshot => "MOONSHOT_API_KEY",
+            Self::Venice => "VENICE_API_KEY",
+            Self::Codebuff => "CODEBUFF_API_KEY",
+            Self::Crof => "CROF_API_KEY",
+            Self::Doubao => "ARK_API_KEY",
+            Self::GroqCloud => "GROQ_API_KEY",
+            Self::LlmProxy => "LLM_PROXY_API_KEY + base URL",
+            Self::ClawRouter => "CLAWROUTER_API_KEY",
+            Self::LiteLlm => "LITELLM_API_KEY + base URL",
+            Self::Deepgram => "DEEPGRAM_API_KEY",
+            Self::Poe => "POE_API_KEY",
+            Self::Chutes => "CHUTES_API_KEY",
+            Self::NeuralWatt => "NEURALWATT_API_KEY",
+            Self::ZenMux => "ZENMUX_MANAGEMENT_API_KEY",
+            Self::Xai => "XAI_MANAGEMENT_API_KEY + team ID",
+            Self::IbmBob => "BOBSHELL_API_KEY",
+            Self::ElevenLabs => "ELEVENLABS_API_KEY",
             Self::Cursor | Self::Ollama | Self::Augment | Self::OpenCode | Self::Factory
             | Self::Amp | Self::VertexAi => "planned",
         }

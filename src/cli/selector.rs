@@ -1,11 +1,11 @@
-use std::io::{self, Write};
+use std::io;
 
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{Attribute, Print, SetAttribute},
-    terminal::{self, ClearType},
-    ExecutableCommand, QueueableCommand,
+use ratatui::{
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    layout::{Constraint, Direction, Layout},
+    style::{Modifier, Style},
+    widgets::{List, ListItem, ListState, Paragraph},
+    Frame,
 };
 
 use crate::core::providers::Provider;
@@ -17,21 +17,138 @@ pub struct SelectableProvider {
     pub detected: bool,
 }
 
-/// RAII guard that restores terminal state on drop (even on panic).
-struct RawModeGuard;
-
-impl RawModeGuard {
-    fn enable() -> io::Result<Self> {
-        terminal::enable_raw_mode()?;
-        io::stdout().execute(cursor::Hide)?;
-        Ok(Self)
-    }
+/// Interactive checkbox list. Scrolling, viewport sizing, and keeping the
+/// selected row visible are handled entirely by ratatui's `List`/`ListState`
+/// — no hand-rolled cursor math, which is what made the list unreachable
+/// once it grew past one screen.
+struct SelectorApp<'a> {
+    items: &'a [SelectableProvider],
+    checked: Vec<bool>,
+    state: ListState,
+    should_exit: bool,
+    cancelled: bool,
 }
 
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        let _ = io::stdout().execute(cursor::Show);
-        let _ = terminal::disable_raw_mode();
+impl<'a> SelectorApp<'a> {
+    fn new(items: &'a [SelectableProvider]) -> Self {
+        let checked = items.iter().map(|i| i.detected).collect();
+        let mut state = ListState::default();
+        if !items.is_empty() {
+            state.select(Some(0));
+        }
+        Self {
+            items,
+            checked,
+            state,
+            should_exit: false,
+            cancelled: false,
+        }
+    }
+
+    fn run(mut self, mut terminal: ratatui::DefaultTerminal) -> io::Result<Option<Vec<String>>> {
+        while !self.should_exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            if let Event::Key(key) = event::read()? {
+                self.handle_key(key);
+            }
+        }
+        if self.cancelled {
+            return Ok(None);
+        }
+        let selected = self
+            .items
+            .iter()
+            .zip(self.checked.iter())
+            .filter(|(_, &c)| c)
+            .map(|(item, _)| item.id.clone())
+            .collect();
+        Ok(Some(selected))
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                self.cancelled = true;
+                self.should_exit = true;
+            }
+            (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                self.cancelled = true;
+                self.should_exit = true;
+            }
+            (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                self.state.select_previous();
+            }
+            (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                self.state.select_next();
+            }
+            (KeyCode::PageUp, _) => self.state.scroll_up_by(10),
+            (KeyCode::PageDown, _) => self.state.scroll_down_by(10),
+            (KeyCode::Home, _) => self.state.select_first(),
+            (KeyCode::End, _) => self.state.select_last(),
+            (KeyCode::Char(' '), _) => {
+                if let Some(i) = self.state.selected() {
+                    if let Some(c) = self.checked.get_mut(i) {
+                        *c = !*c;
+                    }
+                }
+            }
+            (KeyCode::Char('a'), KeyModifiers::NONE) => {
+                let all_checked = self.checked.iter().all(|&c| c);
+                for c in self.checked.iter_mut() {
+                    *c = !all_checked;
+                }
+            }
+            (KeyCode::Enter, _) => {
+                self.should_exit = true;
+            }
+            _ => {}
+        }
+    }
+
+    fn draw(&mut self, frame: &mut Frame) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // title
+                Constraint::Length(1), // blank
+                Constraint::Length(1), // instructions
+                Constraint::Length(1), // blank
+                Constraint::Min(1),    // scrollable list
+                Constraint::Length(1), // blank
+                Constraint::Length(1), // status
+            ])
+            .split(frame.area());
+
+        frame.render_widget(Paragraph::new("Select providers to enable"), chunks[0]);
+        frame.render_widget(
+            Paragraph::new("  Use arrow keys to navigate, space to toggle, enter to confirm"),
+            chunks[2],
+        );
+
+        let list_items: Vec<ListItem> = self
+            .items
+            .iter()
+            .zip(self.checked.iter())
+            .map(|(item, &checked)| {
+                let mark = if checked { "X" } else { " " };
+                ListItem::new(format!(
+                    "[{mark}] {:<15} {}",
+                    item.display_name, item.auth_hint
+                ))
+            })
+            .collect();
+
+        let list = List::new(list_items)
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+            .highlight_symbol("> ");
+
+        frame.render_stateful_widget(list, chunks[4], &mut self.state);
+
+        let count = self.checked.iter().filter(|&&c| c).count();
+        frame.render_widget(
+            Paragraph::new(format!("  {count} selected | enter: confirm | q: cancel")),
+            chunks[6],
+        );
     }
 }
 
@@ -41,132 +158,14 @@ pub fn interactive_select(items: &[SelectableProvider]) -> anyhow::Result<Option
         return Ok(None);
     }
 
-    let _guard = RawModeGuard::enable()?;
+    let terminal = ratatui::try_init()?;
+    let result = SelectorApp::new(items).run(terminal);
+    ratatui::restore();
 
-    let mut checked: Vec<bool> = items.iter().map(|i| i.detected).collect();
-    let mut cursor_pos: usize = 0;
-
-    draw(&items, &checked, cursor_pos)?;
-
-    loop {
-        if let Event::Key(KeyEvent {
-            code, modifiers, ..
-        }) = event::read()?
-        {
-            match (code, modifiers) {
-                (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                    clear_ui(items.len())?;
-                    anyhow::bail!("cancelled");
-                }
-                (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                    clear_ui(items.len())?;
-                    anyhow::bail!("cancelled");
-                }
-                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                    if cursor_pos > 0 {
-                        cursor_pos -= 1;
-                    }
-                }
-                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                    if cursor_pos + 1 < items.len() {
-                        cursor_pos += 1;
-                    }
-                }
-                (KeyCode::Char(' '), _) => {
-                    checked[cursor_pos] = !checked[cursor_pos];
-                }
-                (KeyCode::Char('a'), KeyModifiers::NONE) => {
-                    let all_checked = checked.iter().all(|&c| c);
-                    for c in checked.iter_mut() {
-                        *c = !all_checked;
-                    }
-                }
-                (KeyCode::Enter, _) => {
-                    clear_ui(items.len())?;
-                    let selected: Vec<String> = items
-                        .iter()
-                        .zip(checked.iter())
-                        .filter(|(_, &c)| c)
-                        .map(|(item, _)| item.id.clone())
-                        .collect();
-                    return Ok(Some(selected));
-                }
-                _ => {}
-            }
-            draw(&items, &checked, cursor_pos)?;
-        }
+    match result? {
+        Some(selected) => Ok(Some(selected)),
+        None => anyhow::bail!("cancelled"),
     }
-}
-
-fn draw(items: &[SelectableProvider], checked: &[bool], cursor_pos: usize) -> io::Result<()> {
-    let mut stdout = io::stdout();
-
-    // Move to start and clear
-    stdout
-        .queue(cursor::MoveToColumn(0))?
-        .queue(terminal::Clear(ClearType::FromCursorDown))?;
-
-    // Header
-    stdout
-        .queue(Print("Select providers to enable\r\n"))?
-        .queue(Print("\r\n"))?
-        .queue(Print(
-            "  Use arrow keys to navigate, space to toggle, enter to confirm\r\n",
-        ))?
-        .queue(Print("\r\n"))?;
-
-    // Items
-    for (i, item) in items.iter().enumerate() {
-        let marker = if i == cursor_pos { "> " } else { "  " };
-        let check = if checked[i] { "X" } else { " " };
-
-        if i == cursor_pos {
-            stdout.queue(SetAttribute(Attribute::Reverse))?;
-        }
-
-        stdout.queue(Print(format!(
-            "{marker}[{check}] {:<15} {}\r\n",
-            item.display_name, item.auth_hint
-        )))?;
-
-        if i == cursor_pos {
-            stdout.queue(SetAttribute(Attribute::Reset))?;
-        }
-    }
-
-    // Footer
-    let count = checked.iter().filter(|&&c| c).count();
-    stdout
-        .queue(Print("\r\n"))?
-        .queue(Print(format!(
-            "  {count} selected | enter: confirm | q: cancel\r\n"
-        )))?;
-
-    // Move cursor back up to top for next redraw
-    let total_lines = items.len() + 5; // header(4) + items + footer(2)
-    stdout.queue(cursor::MoveUp(total_lines as u16 + 1))?;
-
-    stdout.flush()?;
-    Ok(())
-}
-
-fn clear_ui(item_count: usize) -> io::Result<()> {
-    let mut stdout = io::stdout();
-    stdout
-        .queue(cursor::MoveToColumn(0))?
-        .queue(terminal::Clear(ClearType::FromCursorDown))?;
-    // Extra clear: move down to where content was and clear
-    let total_lines = item_count + 6;
-    for _ in 0..total_lines {
-        stdout
-            .queue(Print("                                                                  \r\n"))?;
-    }
-    stdout.queue(cursor::MoveUp(total_lines as u16))?;
-    stdout
-        .queue(cursor::MoveToColumn(0))?
-        .queue(terminal::Clear(ClearType::FromCursorDown))?;
-    stdout.flush()?;
-    Ok(())
 }
 
 /// Detect whether credentials for a provider are available locally.
@@ -220,6 +219,28 @@ pub fn detect_credentials(provider: &Provider) -> bool {
         }
         Provider::Antigravity => false, // Requires running language server, no static check
         Provider::Synthetic => std::env::var("SYNTHETIC_API_KEY").is_ok(),
+        Provider::OpenAi => std::env::var("OPENAI_API_KEY").is_ok(),
+        Provider::AzureOpenAi => std::env::var("AZURE_OPENAI_API_KEY").is_ok(),
+        Provider::DeepSeek => std::env::var("DEEPSEEK_API_KEY").is_ok(),
+        Provider::Fireworks => std::env::var("FIREWORKS_API_KEY").is_ok(),
+        Provider::DeepInfra => std::env::var("DEEPINFRA_API_KEY").is_ok(),
+        Provider::Moonshot => std::env::var("MOONSHOT_API_KEY").is_ok(),
+        Provider::Venice => std::env::var("VENICE_API_KEY").is_ok(),
+        Provider::Codebuff => std::env::var("CODEBUFF_API_KEY").is_ok(),
+        Provider::Crof => std::env::var("CROF_API_KEY").is_ok(),
+        Provider::Doubao => std::env::var("ARK_API_KEY").is_ok(),
+        Provider::GroqCloud => std::env::var("GROQ_API_KEY").is_ok(),
+        Provider::LlmProxy => std::env::var("LLM_PROXY_API_KEY").is_ok(),
+        Provider::ClawRouter => std::env::var("CLAWROUTER_API_KEY").is_ok(),
+        Provider::LiteLlm => std::env::var("LITELLM_API_KEY").is_ok(),
+        Provider::Deepgram => std::env::var("DEEPGRAM_API_KEY").is_ok(),
+        Provider::Poe => std::env::var("POE_API_KEY").is_ok(),
+        Provider::Chutes => std::env::var("CHUTES_API_KEY").is_ok(),
+        Provider::NeuralWatt => std::env::var("NEURALWATT_API_KEY").is_ok(),
+        Provider::ZenMux => std::env::var("ZENMUX_MANAGEMENT_API_KEY").is_ok(),
+        Provider::Xai => std::env::var("XAI_MANAGEMENT_API_KEY").is_ok(),
+        Provider::IbmBob => std::env::var("BOBSHELL_API_KEY").is_ok(),
+        Provider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").is_ok(),
         _ => false, // Stubs
     }
 }
@@ -289,7 +310,7 @@ mod tests {
     #[test]
     fn build_selectable_list_excludes_stubs() {
         let items = build_selectable_list();
-        assert_eq!(items.len(), 14);
+        assert_eq!(items.len(), 36);
     }
 
     #[test]
@@ -318,6 +339,73 @@ mod tests {
     fn auto_detect_providers_returns_vec() {
         // Just verify it runs without panic — actual detection depends on environment
         let detected = auto_detect_providers();
-        assert!(detected.len() <= 14);
+        assert!(detected.len() <= 36);
+    }
+
+    fn test_items(n: usize) -> Vec<SelectableProvider> {
+        (0..n)
+            .map(|i| SelectableProvider {
+                id: format!("provider-{i}"),
+                display_name: format!("Provider {i}"),
+                auth_hint: "TEST_KEY".to_string(),
+                detected: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn selector_app_starts_with_first_item_selected() {
+        let items = test_items(5);
+        let app = SelectorApp::new(&items);
+        assert_eq!(app.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn selector_app_space_toggles_current_selection() {
+        let items = test_items(3);
+        let mut app = SelectorApp::new(&items);
+        assert!(!app.checked[0]);
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(app.checked[0]);
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(!app.checked[0]);
+    }
+
+    #[test]
+    fn selector_app_down_then_space_toggles_second_item() {
+        let items = test_items(3);
+        let mut app = SelectorApp::new(&items);
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(!app.checked[0]);
+        assert!(app.checked[1]);
+    }
+
+    #[test]
+    fn selector_app_select_all_toggles_everything() {
+        let items = test_items(4);
+        let mut app = SelectorApp::new(&items);
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(app.checked.iter().all(|&c| c));
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(app.checked.iter().all(|&c| !c));
+    }
+
+    #[test]
+    fn selector_app_enter_confirms_without_cancelling() {
+        let items = test_items(2);
+        let mut app = SelectorApp::new(&items);
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.should_exit);
+        assert!(!app.cancelled);
+    }
+
+    #[test]
+    fn selector_app_escape_cancels() {
+        let items = test_items(2);
+        let mut app = SelectorApp::new(&items);
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.should_exit);
+        assert!(app.cancelled);
     }
 }

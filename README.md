@@ -28,7 +28,7 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 
 ## Features
 
-- **21 providers** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, and more
+- **43 providers** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, OpenAI, DeepSeek, Groq, xAI, and more
 - **Rate limit tracking** — session, weekly, and model-specific windows with reset countdowns
 - **Token cost analysis** — parses JSONL session logs, calculates costs per model per day
 - **Credit/balance monitoring** — remaining credits, spending limits, billing periods
@@ -151,6 +151,28 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | Antigravity | `antigravity` | Auto-detected language server | Model quota info |
 | Synthetic | `synthetic` | `SYNTHETIC_API_KEY` | Multiple quota entries |
 | Vertex AI | `vertex_ai` | — | Token costs (detected from Claude session logs) |
+| OpenAI | `openai` | `OPENAI_API_KEY` | Legacy credit-grant balance |
+| Azure OpenAI | `azure_openai` | `AZURE_OPENAI_API_KEY` + endpoint + deployment | Deployment reachability probe (no billing data) |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | Account balance |
+| Fireworks | `fireworks` | `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_SLUG` | Last-30-day rated spend |
+| DeepInfra | `deepinfra` | `DEEPINFRA_API_KEY` | Prepaid balance, current-month spend, spending limit |
+| Moonshot | `moonshot` | `MOONSHOT_API_KEY` (+ `MOONSHOT_REGION`) | Account balance |
+| Venice | `venice` | `VENICE_API_KEY` | DIEM or USD balance |
+| Codebuff | `codebuff` | `CODEBUFF_API_KEY` | Credit balance |
+| Crof | `crof` | `CROF_API_KEY` | Dollar credits + daily request quota |
+| Doubao | `doubao` | `ARK_API_KEY` | Ark request-limit probe |
+| GroqCloud | `groqcloud` | `GROQ_API_KEY` | Enterprise Prometheus request/token rates |
+| LLM Proxy | `llm_proxy` | `LLM_PROXY_API_KEY` + `LLM_PROXY_BASE_URL` | Aggregate proxy quota stats |
+| ClawRouter | `clawrouter` | `CLAWROUTER_API_KEY` | Policy budget, spend, routed-provider usage |
+| LiteLLM | `litellm` | `LITELLM_API_KEY` + `LITELLM_BASE_URL` | Personal/team budget and spend |
+| Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | Usage across speech/agent/token/TTS metrics |
+| Poe | `poe` | `POE_API_KEY` | Current point balance |
+| Chutes | `chutes` | `CHUTES_API_KEY` | Rolling and monthly quota windows |
+| NeuralWatt | `neuralwatt` | `NEURALWATT_API_KEY` | Prepaid credit balance |
+| ZenMux | `zenmux` | `ZENMUX_MANAGEMENT_API_KEY` | 5-hour/7-day quota windows + PAYG balance |
+| xAI | `xai` | `XAI_MANAGEMENT_API_KEY` + `XAI_TEAM_ID` | Prepaid credit balance |
+| IBM Bob | `ibm_bob` | `BOBSHELL_API_KEY` | Monthly Bobcoin budget across teams |
+| ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | Character credits + voice slot usage |
 
 ### Planned
 
@@ -226,6 +248,28 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `MINIMAX_API_TOKEN` | MiniMax |
 | `Z_AI_API_KEY` | Zai |
 | `SYNTHETIC_API_KEY` | Synthetic |
+| `OPENAI_API_KEY` | OpenAI |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `FIREWORKS_API_KEY` | Fireworks |
+| `DEEPINFRA_API_KEY` | DeepInfra |
+| `MOONSHOT_API_KEY` | Moonshot |
+| `VENICE_API_KEY` | Venice |
+| `CODEBUFF_API_KEY` | Codebuff |
+| `CROF_API_KEY` | Crof |
+| `ARK_API_KEY` | Doubao |
+| `GROQ_API_KEY` | GroqCloud |
+| `LLM_PROXY_API_KEY` | LLM Proxy |
+| `CLAWROUTER_API_KEY` | ClawRouter |
+| `LITELLM_API_KEY` | LiteLLM |
+| `DEEPGRAM_API_KEY` | Deepgram |
+| `POE_API_KEY` | Poe |
+| `CHUTES_API_KEY` | Chutes |
+| `NEURALWATT_API_KEY` | NeuralWatt |
+| `ZENMUX_MANAGEMENT_API_KEY` | ZenMux |
+| `XAI_MANAGEMENT_API_KEY` | xAI |
+| `BOBSHELL_API_KEY` | IBM Bob |
+| `ELEVENLABS_API_KEY` | ElevenLabs |
 
 ### Provider configuration
 
@@ -235,6 +279,21 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `CLAUDE_CONFIG_DIR` | Custom Claude config directory |
 | `MINIMAX_API_HOST` | Custom MiniMax API host |
 | `Z_AI_API_HOST` | Custom Zai API host |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint (required) |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Azure OpenAI deployment name (required) |
+| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default `2024-10-21`) |
+| `FIREWORKS_ACCOUNT_SLUG` | Fireworks account slug (required) |
+| `MOONSHOT_REGION` | `international` (default) or `china` |
+| `GROQ_API_URL` | Custom GroqCloud API base URL |
+| `LLM_PROXY_BASE_URL` | Self-hosted LLM Proxy base URL (required) |
+| `CLAWROUTER_BASE_URL` | Self-hosted ClawRouter base URL |
+| `LITELLM_BASE_URL` | Self-hosted LiteLLM proxy base URL (required) |
+| `DEEPGRAM_PROJECT_ID` | Restrict Deepgram usage to a single project |
+| `DEEPGRAM_API_URL` | Custom Deepgram API base URL |
+| `CHUTES_API_URL` | Custom Chutes API base URL |
+| `NEURALWATT_API_URL` | Custom NeuralWatt API base URL |
+| `XAI_TEAM_ID` | xAI team ID (required) |
+| `ELEVENLABS_API_URL` | Custom ElevenLabs API base URL |
 
 ### General
 
@@ -286,13 +345,17 @@ src/
         ├── antigravity.rs      # Antigravity language server
         ├── synthetic.rs        # Synthetic quotas API
         ├── vertex_ai.rs        # Vertex AI (stub)
-        └── ...                 # Stub providers
+        ├── openai.rs           # OpenAI legacy credit-grant balance
+        ├── deepseek.rs         # DeepSeek balance API
+        ├── groqcloud.rs        # GroqCloud Prometheus metrics
+        ├── xai.rs              # xAI Management API
+        └── ...                 # 20+ more API-key providers, plus stub providers
 ```
 
 ## Development
 
 ```sh
-# Run tests (231 tests)
+# Run tests (311 tests)
 cargo test
 
 # Build release binary
