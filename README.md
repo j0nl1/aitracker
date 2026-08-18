@@ -36,6 +36,7 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 - **Concurrent fetching** — all providers queried in parallel via tokio
 - **Incremental cost cache** — sub-second repeat scans even with gigabytes of session logs
 - **JSON output** — machine-readable output for scripts and dashboards
+- **Read-only broker** — agents can query sanitized usage without receiving provider credentials
 
 ## Installation
 
@@ -107,10 +108,34 @@ Manage configuration.
 ```
 ait config init              # Generate default config file
 ait config edit              # Edit enabled providers interactively
+ait config edit <provider>   # Configure one provider and its API key source
+ait config list              # List provider IDs and enabled state
 ait config check             # Validate existing config
 ait config add <provider>    # Enable a provider (non-interactive)
 ait config remove <provider> # Disable a provider (non-interactive)
 ```
+
+### `ait serve` / `ait client usage`
+
+Run a local, read-only broker for agent harnesses. The server owns the provider credentials and publishes only normalized availability, remaining percentages or credits, reset times, and cache freshness.
+
+```sh
+# Generate this once and give agents only this capability token
+openssl rand -hex 32
+
+# Run in the broker's account/container, where provider credentials are available
+AIT_BROKER_TOKEN=<token> ait serve
+
+# Run in an agent account/container, without provider API keys
+AIT_BROKER_TOKEN=<token> ait --json client usage
+AIT_BROKER_TOKEN=<token> ait --json client usage --provider claude
+```
+
+`ait serve` listens on `127.0.0.1:7843` by default, refreshes every 60 seconds, and accepts `--bind`, `--refresh-seconds`, and `--provider-timeout-seconds`. Both the server and client reject non-loopback addresses; exposing the API over a network without TLS is intentionally unsupported. `/v1/usage` requires an exact bearer token and sends `Cache-Control: no-store`; `/healthz` is unauthenticated and returns liveness only.
+
+For a meaningful security boundary, run the broker as a different OS user, or as a sidecar/container that shares the agent's loopback network namespace but not its filesystem or environment. The broker identity should be the only one able to read the provider-secret `.env`, OAuth files, and provider CLI credentials. Give Paperclip, Hermes Agent, OpenClaw, or another harness only `AIT_BROKER_TOKEN` and permission to execute `ait --json client usage`. Running both processes as the same user is convenient but does not stop the agent from reading that user's provider credentials.
+
+The bearer token is a read-only capability, but it still exposes usage and budget metadata. Store it in the harness's secret facility, scope it only to the relevant agent, avoid command-line arguments and logs, and rotate it by restarting the broker and clients with a new value. Provider configuration is read at broker startup, so restart after enabling or disabling providers.
 
 ### `ait install-skill`
 
@@ -187,7 +212,7 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 
 ## Configuration
 
-Config lives at `~/.config/ait/config.toml` (respects `$XDG_CONFIG_HOME`).
+Config lives at `~/.config/ait/config.toml` (respects `$XDG_CONFIG_HOME`). Provider API keys can be stored separately in `~/.config/ait/.env` by running `ait config edit <provider>`.
 
 ```toml
 [settings]
@@ -212,7 +237,11 @@ id = "openrouter"
 enabled = false
 ```
 
-Run `ait config init` to generate a default config, then enable/disable providers with `ait config add <id>` / `ait config remove <id>` or interactively with `ait config edit`.
+Run `ait config init` to generate a default config, then enable/disable providers with `ait config add <id>` / `ait config remove <id>` or interactively with `ait config edit`. Use `ait config edit <id>` to configure one provider and choose whether its API key comes from the config-local `.env` file or the process environment.
+
+The secrets file is plaintext, but on Unix `ait` creates and updates it with owner-only permissions (`0600`). Existing process environment variables take precedence over values in the file. Do not commit, share, or sync this file; an OS keychain or external secret manager remains preferable for higher-security environments.
+
+When using the broker, this file belongs to the broker identity, not the agent. The broker loads it before collecting usage; `ait client usage` deliberately does not load it and reads only `AIT_BROKER_TOKEN` from its process environment.
 
 ## Token cost scanning
 
@@ -235,6 +264,8 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 **Vertex AI detection:** Requests routed through Vertex AI are automatically identified (via `_vrtx_` markers or `@` in model names) and attributed to the Vertex AI provider.
 
 ## Environment variables
+
+At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.env`). Values already present in the process environment are never overwritten.
 
 ### Provider authentication
 
@@ -310,12 +341,13 @@ src/
 ├── main.rs                     # CLI entry point (clap)
 ├── cli/
 │   ├── usage_cmd.rs            # Provider dispatch + concurrent fetch
-│   ├── config_cmd.rs           # Config init/edit/check/add/remove
+│   ├── config_cmd.rs           # Config init/edit/list/check/add/remove
 │   ├── selector.rs             # Interactive provider selector
 │   ├── renderer.rs             # Text output with color bars
 │   └── output.rs               # Output format detection
 └── core/
     ├── config.rs               # TOML config parsing
+    ├── secrets.rs              # Config-local .env loading and secure writes
     ├── auth.rs                 # OAuth/JWT credential reading
     ├── formatter.rs            # Percent bars, countdowns, credits
     ├── status.rs               # Statuspage.io polling

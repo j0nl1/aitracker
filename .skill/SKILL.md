@@ -62,6 +62,14 @@ Generate the config file at `~/.config/ait/config.toml` (respects `$XDG_CONFIG_H
 
 Re-open the interactive provider selector with currently-enabled providers pre-checked. Updates the config in place, preserving `settings`, `source`, and `api_key` fields.
 
+### `ait config edit <provider>`
+
+Configure one provider interactively. Prompts whether the provider is enabled. For providers requiring an API key, choose to enter it using a masked prompt, use the process environment (which removes any stored value), or retain the existing stored value. Stored keys live in `$XDG_CONFIG_HOME/ait/.env` (default `~/.config/ait/.env`) with owner-only permissions on Unix.
+
+### `ait config list`
+
+List every provider ID and whether it is enabled. `--json` includes `id`, `enabled`, and `supported` fields.
+
 ### `ait config add <provider>`
 
 Enable a provider non-interactively. Creates the config file if it doesn't exist. Rejects unknown IDs and stub (not-yet-supported) providers.
@@ -85,6 +93,26 @@ ait config remove gemini    # (already disabled) → "Provider 'gemini' is alrea
 ### `ait config check`
 
 Validate the existing config file and list any issues.
+
+### `ait serve`
+
+Start the loopback-only read-only usage broker. `AIT_BROKER_TOKEN` is required and must be at least 32 bytes. The broker loads provider credentials, refreshes enabled providers concurrently, and exposes sanitized usage at `/v1/usage`. It never publishes provider identity, credential source, or raw provider errors.
+
+```sh
+AIT_BROKER_TOKEN=<strong-random-token> ait serve
+ait serve --bind 127.0.0.1:7843 --refresh-seconds 60 --provider-timeout-seconds 30
+```
+
+### `ait client usage`
+
+Query a running broker. This command reads `AIT_BROKER_TOKEN` only from the process environment and deliberately does not load the provider-secret `.env`.
+
+```sh
+AIT_BROKER_TOKEN=<token> ait --json client usage
+AIT_BROKER_TOKEN=<token> ait --json client usage --provider openrouter
+```
+
+Run the broker under a separate OS user, or in a sidecar/container that shares loopback networking but not its filesystem or environment with untrusted agent harnesses. Give the agent only the broker token and access to this client command. A same-user broker is not a credential isolation boundary because the agent may be able to read the broker's config and OAuth files directly.
 
 ## Global Flags
 
@@ -124,6 +152,8 @@ Use these IDs with `--provider`:
 
 Config file: `~/.config/ait/config.toml` (or `$XDG_CONFIG_HOME/ait/config.toml`)
 
+Provider secrets file: `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.env`). Usage commands load it without overriding variables already present in the process environment. The file is plaintext and must not be committed or shared; `ait` enforces mode `0600` on Unix when it writes the file.
+
 ```toml
 [settings]
 default_format = "text"   # "text" or "json"
@@ -133,7 +163,6 @@ color = "auto"            # "auto", "always", or "never"
 id = "claude"
 enabled = true
 source = "auto"           # "auto", "oauth", "cli", or "api"
-# api_key = "sk-..."      # optional, overrides auto-detection
 ```
 
 ## Common Workflows
@@ -145,6 +174,8 @@ ait                      # verify it works
 
 # Toggle providers on/off
 ait config edit          # interactive selector
+ait config list          # list provider IDs and enabled state
+ait config edit copilot  # enable/disable and configure GITHUB_TOKEN
 ait config add gemini    # scriptable: enable one provider
 ait config remove gemini # scriptable: disable one provider
 
@@ -176,3 +207,4 @@ ait config check
 | `MINIMAX_API_HOST`  | Custom MiniMax API host                  |
 | `Z_AI_API_HOST`     | Custom Zai API host                      |
 | `Z_AI_QUOTA_URL`    | Full URL override for Zai quota endpoint |
+| `AIT_BROKER_TOKEN`  | Broker/client bearer token (32+ bytes)   |

@@ -94,16 +94,26 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// Get the config file path, respecting XDG_CONFIG_HOME
-    pub fn config_path() -> PathBuf {
-        let config_dir = std::env::var("XDG_CONFIG_HOME")
+    /// Get the application config directory, respecting XDG_CONFIG_HOME.
+    pub fn config_dir() -> PathBuf {
+        let config_root = std::env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 dirs::home_dir()
                     .unwrap_or_else(|| PathBuf::from("~"))
                     .join(".config")
             });
-        config_dir.join("ait").join("config.toml")
+        config_root.join("ait")
+    }
+
+    /// Get the config file path, respecting XDG_CONFIG_HOME
+    pub fn config_path() -> PathBuf {
+        Self::config_dir().join("config.toml")
+    }
+
+    /// Get the config-local environment file used for provider secrets.
+    pub fn secrets_path() -> PathBuf {
+        Self::config_dir().join(".env")
     }
 
     /// Load config from the default path, falling back to defaults if not found
@@ -321,4 +331,5 @@ source = "oauth"
         std::env::remove_var("XDG_CONFIG_HOME");
         assert_eq!(path, PathBuf::from("/tmp/test_xdg_config/ait/config.toml"));
     }
+
 }
