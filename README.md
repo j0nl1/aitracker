@@ -28,7 +28,7 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 
 ## Features
 
-- **43 providers** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, OpenAI, DeepSeek, Groq, xAI, and more
+- **43 provider IDs, 34 implementations** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, OpenAI, DeepSeek, Groq, xAI, and more; nine providers are planned
 - **Rate limit tracking** — session, weekly, and model-specific windows with reset countdowns
 - **Token cost analysis** — parses JSONL session logs, calculates costs per model per day
 - **Credit/balance monitoring** — remaining credits, spending limits, billing periods
@@ -55,7 +55,7 @@ cargo install --path .
 
 ### Requirements
 
-- Rust 1.70+
+- Rust 1.88+ (required by the locked dependencies; validated with Rust 1.94)
 - Active credentials for the providers you want to track (OAuth tokens, API keys, etc.)
 
 ## Quick start
@@ -157,7 +157,9 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 
 ## Providers
 
-### Fully supported
+### Implemented providers
+
+Provider APIs and account permissions vary. The automated tests cover parsing and local behavior; they do not verify every provider against a live account. OpenAI uses a legacy billing endpoint that may reject current API keys.
 
 | Provider | ID | Auth method | What it tracks |
 |----------|----|-------------|----------------|
@@ -175,9 +177,7 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | Kiro | `kiro` | `kiro-cli` subprocess | Credits percentage, usage |
 | Antigravity | `antigravity` | Auto-detected language server | Model quota info |
 | Synthetic | `synthetic` | `SYNTHETIC_API_KEY` | Multiple quota entries |
-| Vertex AI | `vertex_ai` | — | Token costs (detected from Claude session logs) |
 | OpenAI | `openai` | `OPENAI_API_KEY` | Legacy credit-grant balance |
-| Azure OpenAI | `azure_openai` | `AZURE_OPENAI_API_KEY` + endpoint + deployment | Deployment reachability probe (no billing data) |
 | DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | Account balance |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_SLUG` | Last-30-day rated spend |
 | DeepInfra | `deepinfra` | `DEEPINFRA_API_KEY` | Prepaid balance, current-month spend, spending limit |
@@ -185,7 +185,6 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | Venice | `venice` | `VENICE_API_KEY` | DIEM or USD balance |
 | Codebuff | `codebuff` | `CODEBUFF_API_KEY` | Credit balance |
 | Crof | `crof` | `CROF_API_KEY` | Dollar credits + daily request quota |
-| Doubao | `doubao` | `ARK_API_KEY` | Ark request-limit probe |
 | GroqCloud | `groqcloud` | `GROQ_API_KEY` | Enterprise Prometheus request/token rates |
 | LLM Proxy | `llm_proxy` | `LLM_PROXY_API_KEY` + `LLM_PROXY_BASE_URL` | Aggregate proxy quota stats |
 | ClawRouter | `clawrouter` | `CLAWROUTER_API_KEY` | Policy budget, spend, routed-provider usage |
@@ -209,6 +208,11 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | OpenCode | `opencode` | Requires browser cookies |
 | Factory | `factory` | Requires browser cookies |
 | Amp | `amp` | Requires browser cookies |
+| Vertex AI | `vertex_ai` | Provider usage collection is not implemented |
+| Azure OpenAI | `azure_openai` | Read-only usage collection is not implemented |
+| Doubao | `doubao` | Read-only usage collection is not implemented |
+
+Azure OpenAI and Doubao remain unavailable until read-only usage collection is implemented. Checking usage never sends chat-completion probes for these providers.
 
 ## Configuration
 
@@ -280,7 +284,6 @@ At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.
 | `Z_AI_API_KEY` | Zai |
 | `SYNTHETIC_API_KEY` | Synthetic |
 | `OPENAI_API_KEY` | OpenAI |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI |
 | `DEEPSEEK_API_KEY` | DeepSeek |
 | `FIREWORKS_API_KEY` | Fireworks |
 | `DEEPINFRA_API_KEY` | DeepInfra |
@@ -288,7 +291,6 @@ At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.
 | `VENICE_API_KEY` | Venice |
 | `CODEBUFF_API_KEY` | Codebuff |
 | `CROF_API_KEY` | Crof |
-| `ARK_API_KEY` | Doubao |
 | `GROQ_API_KEY` | GroqCloud |
 | `LLM_PROXY_API_KEY` | LLM Proxy |
 | `CLAWROUTER_API_KEY` | ClawRouter |
@@ -310,9 +312,6 @@ At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.
 | `CLAUDE_CONFIG_DIR` | Custom Claude config directory |
 | `MINIMAX_API_HOST` | Custom MiniMax API host |
 | `Z_AI_API_HOST` | Custom Zai API host |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint (required) |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | Azure OpenAI deployment name (required) |
-| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version (default `2024-10-21`) |
 | `FIREWORKS_ACCOUNT_SLUG` | Fireworks account slug (required) |
 | `MOONSHOT_REGION` | `international` (default) or `china` |
 | `GROQ_API_URL` | Custom GroqCloud API base URL |
@@ -333,6 +332,7 @@ At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.
 | `XDG_CONFIG_HOME` | Config directory (default: `~/.config`) |
 | `XDG_CACHE_HOME` | Cache directory (default: `~/.cache`) |
 | `NO_COLOR` | Disable colors ([standard](https://no-color.org/)) |
+| `AIT_BROKER_TOKEN` | Broker/client bearer token (at least 32 bytes) |
 
 ## Project structure
 
@@ -340,7 +340,8 @@ At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.
 src/
 ├── main.rs                     # CLI entry point (clap)
 ├── cli/
-│   ├── usage_cmd.rs            # Provider dispatch + concurrent fetch
+│   ├── usage_cmd.rs            # Concurrent usage collection
+│   ├── broker_cmd.rs           # Local broker server and client
 │   ├── config_cmd.rs           # Config init/edit/list/check/add/remove
 │   ├── selector.rs             # Interactive provider selector
 │   ├── renderer.rs             # Text output with color bars
@@ -348,10 +349,11 @@ src/
 └── core/
     ├── config.rs               # TOML config parsing
     ├── secrets.rs              # Config-local .env loading and secure writes
+    ├── broker.rs               # Broker response sanitization and validation
     ├── auth.rs                 # OAuth/JWT credential reading
     ├── formatter.rs            # Percent bars, countdowns, credits
     ├── status.rs               # Statuspage.io polling
-    ├── process.rs              # Subprocess runner
+    ├── process.rs              # Binary lookup in PATH
     ├── models/
     │   ├── usage.rs            # UsageSnapshot, RateWindow
     │   ├── credits.rs          # CreditsSnapshot
@@ -387,7 +389,7 @@ src/
 ## Development
 
 ```sh
-# Run tests (311 tests)
+# Run tests
 cargo test
 
 # Build release binary
@@ -402,8 +404,8 @@ cargo run -- usage --all
 
 1. Create `src/core/providers/<name>.rs` with a `pub async fn fetch() -> Result<FetchResult>`
 2. Add the variant to `Provider` enum in `src/core/providers/mod.rs`
-3. Wire it into `dispatch_fetch()` in `src/cli/usage_cmd.rs`
-4. Add a default config entry in `src/core/config.rs`
+3. Wire it into `fetch()` and the metadata methods in `src/core/providers/mod.rs`
+4. Add credential detection in `src/cli/selector.rs` and document any required configuration
 
 ## Acknowledgements
 

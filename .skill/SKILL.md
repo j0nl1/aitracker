@@ -130,6 +130,8 @@ These flags work with any command:
 
 Use these IDs with `--provider`:
 
+Run `ait --json config list` for the complete provider catalog, enabled state, and support status. Azure OpenAI and Doubao are unavailable until read-only usage collection is implemented; they do not send inference probes.
+
 | ID            | Provider    | Auth                                  |
 | ------------- | ----------- | ------------------------------------- |
 | `claude`      | Claude      | OAuth (`~/.claude/.credentials.json`) |
@@ -146,7 +148,6 @@ Use these IDs with `--provider`:
 | `jetbrains`   | JetBrains   | Local IDE config                      |
 | `antigravity` | Antigravity | Language server auto-detection        |
 | `synthetic`   | Synthetic   | `SYNTHETIC_API_KEY`                   |
-| `vertex_ai`   | Vertex AI   | Detected from Claude session logs     |
 
 ## Configuration
 
@@ -206,5 +207,5 @@ ait config check
 | `CODEX_HOME`        | Custom Codex config directory            |
 | `MINIMAX_API_HOST`  | Custom MiniMax API host                  |
 | `Z_AI_API_HOST`     | Custom Zai API host                      |
-| `Z_AI_QUOTA_URL`    | Full URL override for Zai quota endpoint |
+| `Z_AI_QUOTA_URL`    | Deprecated and ignored; use `Z_AI_API_HOST` |
 | `AIT_BROKER_TOKEN`  | Broker/client bearer token (32+ bytes)   |
