@@ -179,8 +179,8 @@ mod tests {
         let result = read_claude_credentials();
         // In CI the file won't exist, so we expect an error about reading the file.
         // If it happens to exist on the dev machine, that's fine too.
-        if result.is_err() {
-            let msg = result.unwrap_err().to_string();
+        if let Err(error) = result {
+            let msg = error.to_string();
             assert!(!msg.is_empty(), "Error message should not be empty");
         }
     }

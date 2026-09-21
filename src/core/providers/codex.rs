@@ -89,6 +89,7 @@ where
             .as_f64()
             .ok_or_else(|| serde::de::Error::custom("balance number out of f64 range")),
         serde_json::Value::String(s) => s.parse::<f64>().map_err(serde::de::Error::custom),
+        serde_json::Value::Null => Ok(0.0),
         other => Err(serde::de::Error::custom(format!(
             "expected number or string for balance, got {:?}",
             other
@@ -318,6 +319,17 @@ mod tests {
         }"#;
         let credits: CodexCreditsRaw = serde_json::from_str(json).unwrap();
         assert!((credits.balance - 42.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn deserialize_balance_as_null() {
+        let json = r#"{
+            "has_credits": false,
+            "unlimited": false,
+            "balance": null
+        }"#;
+        let credits: CodexCreditsRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(credits.balance, 0.0);
     }
 
     #[test]

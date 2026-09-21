@@ -9,10 +9,30 @@ use crate::core::providers::Provider;
 
 const USER_URL: &str = "https://api.github.com/copilot_internal/user";
 
+fn deserialize_optional_number<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumberOrString {
+        Number(f64),
+        String(String),
+    }
+
+    Ok(
+        Option::<NumberOrString>::deserialize(deserializer)?.and_then(|value| match value {
+            NumberOrString::Number(number) => Some(number),
+            NumberOrString::String(string) => string.parse().ok(),
+        }),
+    )
+}
+
 #[derive(Deserialize)]
 struct QuotaSnapshot {
     percent_remaining: Option<f64>,
-    entitlement: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_number")]
+    entitlement: Option<f64>,
     remaining: Option<u64>,
 }
 
@@ -140,7 +160,7 @@ pub async fn fetch() -> Result<FetchResult> {
         .quota_snapshots
         .as_ref()
         .and_then(|qs| qs.chat.as_ref())
-        .map(|c| parse_chat_window(c));
+        .map(parse_chat_window);
 
     let identity = data.copilot_plan.map(|plan| ProviderIdentity {
         email: None,
@@ -158,10 +178,7 @@ pub async fn fetch() -> Result<FetchResult> {
                 has_credits: remaining > 0,
                 unlimited: false,
                 used: None,
-                limit: pi
-                    .entitlement
-                    .as_ref()
-                    .and_then(|e| e.parse::<f64>().ok()),
+                limit: pi.entitlement,
                 currency: None,
                 period: Some("Monthly".to_string()),
             })
@@ -210,7 +227,7 @@ mod tests {
         let snapshots = data.quota_snapshots.unwrap();
         let premium = snapshots.premium_interactions.unwrap();
         assert!((premium.percent_remaining.unwrap() - 72.5).abs() < 1e-10);
-        assert_eq!(premium.entitlement.as_deref(), Some("300"));
+        assert_eq!(premium.entitlement, Some(300.0));
         assert_eq!(premium.remaining, Some(217));
         let chat = snapshots.chat.unwrap();
         assert!((chat.percent_remaining.unwrap() - 90.0).abs() < 1e-10);
@@ -234,10 +251,26 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_numeric_entitlement() {
+        let json = r#"{
+            "quota_snapshots": {
+                "premium_interactions": {
+                    "entitlement": 0,
+                    "remaining": 0,
+                    "percent_remaining": 0
+                }
+            }
+        }"#;
+        let data: CopilotUserResponse = serde_json::from_str(json).unwrap();
+        let premium = data.quota_snapshots.unwrap().premium_interactions.unwrap();
+        assert_eq!(premium.entitlement, Some(0.0));
+    }
+
+    #[test]
     fn parse_premium_window_calculates_used_percent() {
         let snapshot = QuotaSnapshot {
             percent_remaining: Some(72.5),
-            entitlement: Some("300".to_string()),
+            entitlement: Some(300.0),
             remaining: Some(217),
         };
         let window = parse_premium_window(&snapshot, Some("2099-12-31T23:59:59Z"));
@@ -275,7 +308,7 @@ mod tests {
     fn parse_chat_window_calculates_used_percent() {
         let snapshot = QuotaSnapshot {
             percent_remaining: Some(90.0),
-            entitlement: Some("1000".to_string()),
+            entitlement: Some(1000.0),
             remaining: Some(900),
         };
         let window = parse_chat_window(&snapshot);
@@ -287,7 +320,7 @@ mod tests {
     fn parse_premium_window_zero_remaining() {
         let snapshot = QuotaSnapshot {
             percent_remaining: Some(0.0),
-            entitlement: Some("300".to_string()),
+            entitlement: Some(300.0),
             remaining: Some(0),
         };
         let window = parse_premium_window(&snapshot, None);

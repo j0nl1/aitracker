@@ -1,3 +1,4 @@
+pub mod broker_cmd;
 pub mod config_cmd;
 pub mod output;
 pub mod renderer;

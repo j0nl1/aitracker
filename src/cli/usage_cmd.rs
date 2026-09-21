@@ -19,38 +19,6 @@ struct ProviderPayload {
     cost: Option<crate::core::models::cost::CostSummary>,
 }
 
-fn dispatch_fetch(
-    provider: Provider,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<crate::core::providers::fetch::FetchResult>> + Send>>
-{
-    use crate::core::providers::*;
-    Box::pin(async move {
-        match provider {
-            Provider::Claude => claude::fetch().await,
-            Provider::Codex => codex::fetch().await,
-            Provider::Copilot => copilot::fetch().await,
-            Provider::Warp => warp::fetch().await,
-            Provider::Kimi => kimi::fetch().await,
-            Provider::KimiK2 => kimi_k2::fetch().await,
-            Provider::OpenRouter => openrouter::fetch().await,
-            Provider::MiniMax => minimax::fetch().await,
-            Provider::Zai => zai::fetch().await,
-            Provider::Ollama => ollama::fetch().await,
-            Provider::Gemini => gemini::fetch().await,
-            Provider::Kiro => kiro::fetch().await,
-            Provider::Augment => augment::fetch().await,
-            Provider::JetBrains => jetbrains::fetch().await,
-            Provider::Cursor => cursor::fetch().await,
-            Provider::OpenCode => opencode::fetch().await,
-            Provider::Factory => factory::fetch().await,
-            Provider::Amp => amp::fetch().await,
-            Provider::Antigravity => antigravity::fetch().await,
-            Provider::Synthetic => synthetic::fetch().await,
-            Provider::VertexAi => vertex_ai::fetch().await,
-        }
-    })
-}
-
 pub async fn run(
     provider_filter: Option<String>,
     _source: Option<String>,
@@ -58,6 +26,7 @@ pub async fn run(
     show_all: bool,
     opts: &OutputOptions,
 ) -> Result<()> {
+    crate::core::secrets::load_env_file(&AppConfig::secrets_path())?;
     let config = AppConfig::load().unwrap_or_default();
 
     // Determine which providers to fetch
@@ -136,7 +105,7 @@ pub async fn run(
         .map(|provider| {
             let should_fetch_status = fetch_status;
             tokio::spawn(async move {
-                let result = dispatch_fetch(provider).await;
+                let result = crate::core::providers::fetch(provider).await;
                 let status = if should_fetch_status {
                     crate::core::status::fetch_status(&provider).await.ok()
                 } else {

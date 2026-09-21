@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Integrate Greg Bacchus's three commits, preserving their authorship: 22 new provider IDs, a scrolling provider selector, per-provider credential configuration, and a local read-only usage broker.
+- Add `ait config list`, `ait config edit <provider>`, `ait serve`, and `ait client usage`.
+- Store provider secrets in a config-local `.env` file with owner-only Unix permissions.
+
+### Fixed
+
+- Accept null Codex balances and numeric Copilot entitlements.
+- Preserve literal secrets when writing dotenv values and correctly encode Fireworks timestamps and LiteLLM identifiers.
+- Keep broker client requests on loopback by bypassing proxies, rejecting redirects, and applying a timeout; report invalid broker configuration instead of silently selecting default providers.
+
+### Changed
+
+- Keep Azure OpenAI and Doubao as planned providers until read-only usage collection is implemented, avoiding chat-completion charges during monitoring.
+- Require Rust 1.88 or later for the locked dependencies.
+
 ## [0.2.2] - 2026-02-27
 
 ### Added

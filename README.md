@@ -28,7 +28,7 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 
 ## Features
 
-- **21 providers** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, and more
+- **43 provider IDs, 34 implementations** — Claude, Codex, Copilot, Gemini, Warp, OpenRouter, Kiro, JetBrains, OpenAI, DeepSeek, Groq, xAI, and more; nine providers are planned
 - **Rate limit tracking** — session, weekly, and model-specific windows with reset countdowns
 - **Token cost analysis** — parses JSONL session logs, calculates costs per model per day
 - **Credit/balance monitoring** — remaining credits, spending limits, billing periods
@@ -36,6 +36,7 @@ A fast, terminal-native CLI for tracking AI provider usage, rate limits, credits
 - **Concurrent fetching** — all providers queried in parallel via tokio
 - **Incremental cost cache** — sub-second repeat scans even with gigabytes of session logs
 - **JSON output** — machine-readable output for scripts and dashboards
+- **Read-only broker** — agents can query sanitized usage without receiving provider credentials
 
 ## Installation
 
@@ -54,7 +55,7 @@ cargo install --path .
 
 ### Requirements
 
-- Rust 1.70+
+- Rust 1.88+ (required by the locked dependencies; validated with Rust 1.94)
 - Active credentials for the providers you want to track (OAuth tokens, API keys, etc.)
 
 ## Quick start
@@ -107,10 +108,34 @@ Manage configuration.
 ```
 ait config init              # Generate default config file
 ait config edit              # Edit enabled providers interactively
+ait config edit <provider>   # Configure one provider and its API key source
+ait config list              # List provider IDs and enabled state
 ait config check             # Validate existing config
 ait config add <provider>    # Enable a provider (non-interactive)
 ait config remove <provider> # Disable a provider (non-interactive)
 ```
+
+### `ait serve` / `ait client usage`
+
+Run a local, read-only broker for agent harnesses. The server owns the provider credentials and publishes only normalized availability, remaining percentages or credits, reset times, and cache freshness.
+
+```sh
+# Generate this once and give agents only this capability token
+openssl rand -hex 32
+
+# Run in the broker's account/container, where provider credentials are available
+AIT_BROKER_TOKEN=<token> ait serve
+
+# Run in an agent account/container, without provider API keys
+AIT_BROKER_TOKEN=<token> ait --json client usage
+AIT_BROKER_TOKEN=<token> ait --json client usage --provider claude
+```
+
+`ait serve` listens on `127.0.0.1:7843` by default, refreshes every 60 seconds, and accepts `--bind`, `--refresh-seconds`, and `--provider-timeout-seconds`. Both the server and client reject non-loopback addresses; exposing the API over a network without TLS is intentionally unsupported. `/v1/usage` requires an exact bearer token and sends `Cache-Control: no-store`; `/healthz` is unauthenticated and returns liveness only.
+
+For a meaningful security boundary, run the broker as a different OS user, or as a sidecar/container that shares the agent's loopback network namespace but not its filesystem or environment. The broker identity should be the only one able to read the provider-secret `.env`, OAuth files, and provider CLI credentials. Give Paperclip, Hermes Agent, OpenClaw, or another harness only `AIT_BROKER_TOKEN` and permission to execute `ait --json client usage`. Running both processes as the same user is convenient but does not stop the agent from reading that user's provider credentials.
+
+The bearer token is a read-only capability, but it still exposes usage and budget metadata. Store it in the harness's secret facility, scope it only to the relevant agent, avoid command-line arguments and logs, and rotate it by restarting the broker and clients with a new value. Provider configuration is read at broker startup, so restart after enabling or disabling providers.
 
 ### `ait install-skill`
 
@@ -132,7 +157,9 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 
 ## Providers
 
-### Fully supported
+### Implemented providers
+
+Provider APIs and account permissions vary. The automated tests cover parsing and local behavior; they do not verify every provider against a live account. OpenAI uses a legacy billing endpoint that may reject current API keys.
 
 | Provider | ID | Auth method | What it tracks |
 |----------|----|-------------|----------------|
@@ -150,7 +177,26 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | Kiro | `kiro` | `kiro-cli` subprocess | Credits percentage, usage |
 | Antigravity | `antigravity` | Auto-detected language server | Model quota info |
 | Synthetic | `synthetic` | `SYNTHETIC_API_KEY` | Multiple quota entries |
-| Vertex AI | `vertex_ai` | — | Token costs (detected from Claude session logs) |
+| OpenAI | `openai` | `OPENAI_API_KEY` | Legacy credit-grant balance |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | Account balance |
+| Fireworks | `fireworks` | `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_SLUG` | Last-30-day rated spend |
+| DeepInfra | `deepinfra` | `DEEPINFRA_API_KEY` | Prepaid balance, current-month spend, spending limit |
+| Moonshot | `moonshot` | `MOONSHOT_API_KEY` (+ `MOONSHOT_REGION`) | Account balance |
+| Venice | `venice` | `VENICE_API_KEY` | DIEM or USD balance |
+| Codebuff | `codebuff` | `CODEBUFF_API_KEY` | Credit balance |
+| Crof | `crof` | `CROF_API_KEY` | Dollar credits + daily request quota |
+| GroqCloud | `groqcloud` | `GROQ_API_KEY` | Enterprise Prometheus request/token rates |
+| LLM Proxy | `llm_proxy` | `LLM_PROXY_API_KEY` + `LLM_PROXY_BASE_URL` | Aggregate proxy quota stats |
+| ClawRouter | `clawrouter` | `CLAWROUTER_API_KEY` | Policy budget, spend, routed-provider usage |
+| LiteLLM | `litellm` | `LITELLM_API_KEY` + `LITELLM_BASE_URL` | Personal/team budget and spend |
+| Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | Usage across speech/agent/token/TTS metrics |
+| Poe | `poe` | `POE_API_KEY` | Current point balance |
+| Chutes | `chutes` | `CHUTES_API_KEY` | Rolling and monthly quota windows |
+| NeuralWatt | `neuralwatt` | `NEURALWATT_API_KEY` | Prepaid credit balance |
+| ZenMux | `zenmux` | `ZENMUX_MANAGEMENT_API_KEY` | 5-hour/7-day quota windows + PAYG balance |
+| xAI | `xai` | `XAI_MANAGEMENT_API_KEY` + `XAI_TEAM_ID` | Prepaid credit balance |
+| IBM Bob | `ibm_bob` | `BOBSHELL_API_KEY` | Monthly Bobcoin budget across teams |
+| ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | Character credits + voice slot usage |
 
 ### Planned
 
@@ -162,10 +208,15 @@ ait install-skill [--source <path>] [--providers <csv|*>] [--scope <project|user
 | OpenCode | `opencode` | Requires browser cookies |
 | Factory | `factory` | Requires browser cookies |
 | Amp | `amp` | Requires browser cookies |
+| Vertex AI | `vertex_ai` | Provider usage collection is not implemented |
+| Azure OpenAI | `azure_openai` | Read-only usage collection is not implemented |
+| Doubao | `doubao` | Read-only usage collection is not implemented |
+
+Azure OpenAI and Doubao remain unavailable until read-only usage collection is implemented. Checking usage never sends chat-completion probes for these providers.
 
 ## Configuration
 
-Config lives at `~/.config/ait/config.toml` (respects `$XDG_CONFIG_HOME`).
+Config lives at `~/.config/ait/config.toml` (respects `$XDG_CONFIG_HOME`). Provider API keys can be stored separately in `~/.config/ait/.env` by running `ait config edit <provider>`.
 
 ```toml
 [settings]
@@ -190,7 +241,11 @@ id = "openrouter"
 enabled = false
 ```
 
-Run `ait config init` to generate a default config, then enable/disable providers with `ait config add <id>` / `ait config remove <id>` or interactively with `ait config edit`.
+Run `ait config init` to generate a default config, then enable/disable providers with `ait config add <id>` / `ait config remove <id>` or interactively with `ait config edit`. Use `ait config edit <id>` to configure one provider and choose whether its API key comes from the config-local `.env` file or the process environment.
+
+The secrets file is plaintext, but on Unix `ait` creates and updates it with owner-only permissions (`0600`). Existing process environment variables take precedence over values in the file. Do not commit, share, or sync this file; an OS keychain or external secret manager remains preferable for higher-security environments.
+
+When using the broker, this file belongs to the broker identity, not the agent. The broker loads it before collecting usage; `ait client usage` deliberately does not load it and reads only `AIT_BROKER_TOKEN` from its process environment.
 
 ## Token cost scanning
 
@@ -214,6 +269,8 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 
 ## Environment variables
 
+At startup, usage commands load `~/.config/ait/.env` (or `$XDG_CONFIG_HOME/ait/.env`). Values already present in the process environment are never overwritten.
+
 ### Provider authentication
 
 | Variable | Provider |
@@ -226,6 +283,26 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `MINIMAX_API_TOKEN` | MiniMax |
 | `Z_AI_API_KEY` | Zai |
 | `SYNTHETIC_API_KEY` | Synthetic |
+| `OPENAI_API_KEY` | OpenAI |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `FIREWORKS_API_KEY` | Fireworks |
+| `DEEPINFRA_API_KEY` | DeepInfra |
+| `MOONSHOT_API_KEY` | Moonshot |
+| `VENICE_API_KEY` | Venice |
+| `CODEBUFF_API_KEY` | Codebuff |
+| `CROF_API_KEY` | Crof |
+| `GROQ_API_KEY` | GroqCloud |
+| `LLM_PROXY_API_KEY` | LLM Proxy |
+| `CLAWROUTER_API_KEY` | ClawRouter |
+| `LITELLM_API_KEY` | LiteLLM |
+| `DEEPGRAM_API_KEY` | Deepgram |
+| `POE_API_KEY` | Poe |
+| `CHUTES_API_KEY` | Chutes |
+| `NEURALWATT_API_KEY` | NeuralWatt |
+| `ZENMUX_MANAGEMENT_API_KEY` | ZenMux |
+| `XAI_MANAGEMENT_API_KEY` | xAI |
+| `BOBSHELL_API_KEY` | IBM Bob |
+| `ELEVENLABS_API_KEY` | ElevenLabs |
 
 ### Provider configuration
 
@@ -235,6 +312,18 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `CLAUDE_CONFIG_DIR` | Custom Claude config directory |
 | `MINIMAX_API_HOST` | Custom MiniMax API host |
 | `Z_AI_API_HOST` | Custom Zai API host |
+| `FIREWORKS_ACCOUNT_SLUG` | Fireworks account slug (required) |
+| `MOONSHOT_REGION` | `international` (default) or `china` |
+| `GROQ_API_URL` | Custom GroqCloud API base URL |
+| `LLM_PROXY_BASE_URL` | Self-hosted LLM Proxy base URL (required) |
+| `CLAWROUTER_BASE_URL` | Self-hosted ClawRouter base URL |
+| `LITELLM_BASE_URL` | Self-hosted LiteLLM proxy base URL (required) |
+| `DEEPGRAM_PROJECT_ID` | Restrict Deepgram usage to a single project |
+| `DEEPGRAM_API_URL` | Custom Deepgram API base URL |
+| `CHUTES_API_URL` | Custom Chutes API base URL |
+| `NEURALWATT_API_URL` | Custom NeuralWatt API base URL |
+| `XAI_TEAM_ID` | xAI team ID (required) |
+| `ELEVENLABS_API_URL` | Custom ElevenLabs API base URL |
 
 ### General
 
@@ -243,6 +332,7 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 | `XDG_CONFIG_HOME` | Config directory (default: `~/.config`) |
 | `XDG_CACHE_HOME` | Cache directory (default: `~/.cache`) |
 | `NO_COLOR` | Disable colors ([standard](https://no-color.org/)) |
+| `AIT_BROKER_TOKEN` | Broker/client bearer token (at least 32 bytes) |
 
 ## Project structure
 
@@ -250,17 +340,20 @@ The cache lives at `~/.cache/ait/cost-cache.json`. First scan of large session d
 src/
 ├── main.rs                     # CLI entry point (clap)
 ├── cli/
-│   ├── usage_cmd.rs            # Provider dispatch + concurrent fetch
-│   ├── config_cmd.rs           # Config init/edit/check/add/remove
+│   ├── usage_cmd.rs            # Concurrent usage collection
+│   ├── broker_cmd.rs           # Local broker server and client
+│   ├── config_cmd.rs           # Config init/edit/list/check/add/remove
 │   ├── selector.rs             # Interactive provider selector
 │   ├── renderer.rs             # Text output with color bars
 │   └── output.rs               # Output format detection
 └── core/
     ├── config.rs               # TOML config parsing
+    ├── secrets.rs              # Config-local .env loading and secure writes
+    ├── broker.rs               # Broker response sanitization and validation
     ├── auth.rs                 # OAuth/JWT credential reading
     ├── formatter.rs            # Percent bars, countdowns, credits
     ├── status.rs               # Statuspage.io polling
-    ├── process.rs              # Subprocess runner
+    ├── process.rs              # Binary lookup in PATH
     ├── models/
     │   ├── usage.rs            # UsageSnapshot, RateWindow
     │   ├── credits.rs          # CreditsSnapshot
@@ -286,13 +379,17 @@ src/
         ├── antigravity.rs      # Antigravity language server
         ├── synthetic.rs        # Synthetic quotas API
         ├── vertex_ai.rs        # Vertex AI (stub)
-        └── ...                 # Stub providers
+        ├── openai.rs           # OpenAI legacy credit-grant balance
+        ├── deepseek.rs         # DeepSeek balance API
+        ├── groqcloud.rs        # GroqCloud Prometheus metrics
+        ├── xai.rs              # xAI Management API
+        └── ...                 # 20+ more API-key providers, plus stub providers
 ```
 
 ## Development
 
 ```sh
-# Run tests (231 tests)
+# Run tests
 cargo test
 
 # Build release binary
@@ -307,8 +404,8 @@ cargo run -- usage --all
 
 1. Create `src/core/providers/<name>.rs` with a `pub async fn fetch() -> Result<FetchResult>`
 2. Add the variant to `Provider` enum in `src/core/providers/mod.rs`
-3. Wire it into `dispatch_fetch()` in `src/cli/usage_cmd.rs`
-4. Add a default config entry in `src/core/config.rs`
+3. Wire it into `fetch()` and the metadata methods in `src/core/providers/mod.rs`
+4. Add credential detection in `src/cli/selector.rs` and document any required configuration
 
 ## Acknowledgements
 

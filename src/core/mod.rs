@@ -1,8 +1,10 @@
 pub mod auth;
+pub mod broker;
 pub mod config;
 pub mod cost;
 pub mod formatter;
 pub mod models;
 pub mod process;
 pub mod providers;
+pub mod secrets;
 pub mod status;
