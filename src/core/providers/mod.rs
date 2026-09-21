@@ -292,7 +292,6 @@ impl Provider {
             Provider::Antigravity,
             Provider::Synthetic,
             Provider::OpenAi,
-            Provider::AzureOpenAi,
             Provider::DeepSeek,
             Provider::Fireworks,
             Provider::DeepInfra,
@@ -300,7 +299,6 @@ impl Provider {
             Provider::Venice,
             Provider::Codebuff,
             Provider::Crof,
-            Provider::Doubao,
             Provider::GroqCloud,
             Provider::LlmProxy,
             Provider::ClawRouter,
@@ -321,6 +319,8 @@ impl Provider {
             Provider::Factory,
             Provider::Amp,
             Provider::VertexAi,
+            Provider::AzureOpenAi,
+            Provider::Doubao,
         ]
     }
 
@@ -334,6 +334,8 @@ impl Provider {
                 | Self::Factory
                 | Self::Amp
                 | Self::VertexAi
+                | Self::AzureOpenAi
+                | Self::Doubao
         )
     }
 
@@ -354,7 +356,6 @@ impl Provider {
             Self::Antigravity => "language server process",
             Self::Synthetic => "SYNTHETIC_API_KEY",
             Self::OpenAi => "OPENAI_API_KEY",
-            Self::AzureOpenAi => "AZURE_OPENAI_API_KEY + endpoint",
             Self::DeepSeek => "DEEPSEEK_API_KEY",
             Self::Fireworks => "FIREWORKS_API_KEY + account slug",
             Self::DeepInfra => "DEEPINFRA_API_KEY",
@@ -362,7 +363,6 @@ impl Provider {
             Self::Venice => "VENICE_API_KEY",
             Self::Codebuff => "CODEBUFF_API_KEY",
             Self::Crof => "CROF_API_KEY",
-            Self::Doubao => "ARK_API_KEY",
             Self::GroqCloud => "GROQ_API_KEY",
             Self::LlmProxy => "LLM_PROXY_API_KEY + base URL",
             Self::ClawRouter => "CLAWROUTER_API_KEY",
@@ -376,7 +376,7 @@ impl Provider {
             Self::IbmBob => "BOBSHELL_API_KEY",
             Self::ElevenLabs => "ELEVENLABS_API_KEY",
             Self::Cursor | Self::Ollama | Self::Augment | Self::OpenCode | Self::Factory
-            | Self::Amp | Self::VertexAi => "planned",
+            | Self::Amp | Self::VertexAi | Self::AzureOpenAi | Self::Doubao => "planned",
         }
     }
 
@@ -483,6 +483,32 @@ pub async fn fetch(provider: Provider) -> anyhow::Result<fetch::FetchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_only_stubs_reject_dispatch_before_credentials_or_network() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let mut context = Context::from_waker(Waker::noop());
+        for (provider, expected_error) in [
+            (
+                Provider::AzureOpenAi,
+                "Azure OpenAI read-only usage monitoring is not yet implemented",
+            ),
+            (
+                Provider::Doubao,
+                "Doubao read-only usage monitoring is not yet implemented",
+            ),
+        ] {
+            assert!(provider.is_stub());
+            let mut request = std::pin::pin!(fetch(provider));
+            // Dispatch must fail on its first poll without credentials or an I/O runtime.
+            match request.as_mut().poll(&mut context) {
+                Poll::Ready(Err(error)) => assert_eq!(error.to_string(), expected_error),
+                _ => panic!("{} must immediately reject usage polling", provider.id()),
+            }
+        }
+    }
 
     #[test]
     fn api_key_env_var_uses_each_providers_canonical_secret() {

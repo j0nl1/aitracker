@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::core::models::credits::CreditsSnapshot;
@@ -42,6 +42,22 @@ fn account_slug_valid(slug: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
+fn billing_summary_url(
+    account_slug: &str,
+    start_time: DateTime<Utc>,
+    end_time: DateTime<Utc>,
+) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(&format!(
+        "https://api.fireworks.ai/v1/accounts/{}/billing/summary",
+        account_slug
+    ))
+    .context("Failed to construct Fireworks billing summary URL")?;
+    url.query_pairs_mut()
+        .append_pair("startTime", &start_time.to_rfc3339())
+        .append_pair("endTime", &end_time.to_rfc3339());
+    Ok(url)
+}
+
 /// Fetch 30-day rated spend from the Fireworks billing summary API.
 /// Fireworks has no credit-balance endpoint — only rated spend is available.
 pub async fn fetch() -> Result<FetchResult> {
@@ -57,16 +73,11 @@ pub async fn fetch() -> Result<FetchResult> {
     let end_time = Utc::now();
     let start_time = end_time - chrono::Duration::days(30);
 
-    let url = format!(
-        "https://api.fireworks.ai/v1/accounts/{}/billing/summary?startTime={}&endTime={}",
-        account_slug,
-        start_time.to_rfc3339(),
-        end_time.to_rfc3339()
-    );
+    let url = billing_summary_url(&account_slug, start_time, end_time)?;
 
     let client = reqwest::Client::new();
     let response = client
-        .get(&url)
+        .get(url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Accept", "application/json")
         .send()
@@ -125,6 +136,22 @@ pub async fn fetch() -> Result<FetchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn billing_summary_url_preserves_rfc3339_timezone_offsets() {
+        let start_time = "2026-08-23T12:34:56+00:00".parse().unwrap();
+        let end_time = "2026-09-22T12:34:56+00:00".parse().unwrap();
+        let url = billing_summary_url("my-account", start_time, end_time).unwrap();
+
+        assert_eq!(url.path(), "/v1/accounts/my-account/billing/summary");
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            [
+                ("startTime".into(), "2026-08-23T12:34:56+00:00".into()),
+                ("endTime".into(), "2026-09-22T12:34:56+00:00".into()),
+            ]
+        );
+    }
 
     #[test]
     fn deserialize_full_response() {

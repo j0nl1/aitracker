@@ -47,6 +47,14 @@ fn management_base_url(base: &str) -> String {
     }
 }
 
+fn info_url(base: &str, resource: &str, id: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(&format!("{}/{}/info", base, resource))
+        .context("Failed to construct LiteLLM info URL")?;
+    url.query_pairs_mut()
+        .append_pair(&format!("{}_id", resource), id);
+    Ok(url)
+}
+
 fn budget_window(spend: Option<f64>, budget: Option<f64>) -> Option<RateWindow> {
     let budget = budget.filter(|b| *b > 0.0)?;
     let spend = spend.unwrap_or(0.0);
@@ -92,7 +100,7 @@ pub async fn fetch() -> Result<FetchResult> {
 
     let primary = if let Some(user_id) = key_info.info.user_id {
         let resp = client
-            .get(format!("{}/user/info?user_id={}", base, user_id))
+            .get(info_url(&base, "user", &user_id)?)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Accept", "application/json")
             .send()
@@ -109,7 +117,7 @@ pub async fn fetch() -> Result<FetchResult> {
             .and_then(|u| budget_window(u.spend, u.max_budget))
     } else if let Some(team_id) = key_info.info.team_id {
         let resp = client
-            .get(format!("{}/team/info?team_id={}", base, team_id))
+            .get(info_url(&base, "team", &team_id)?)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Accept", "application/json")
             .send()
@@ -146,6 +154,21 @@ pub async fn fetch() -> Result<FetchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn info_urls_preserve_user_and_team_ids_as_single_query_values() {
+        let id = "name+tag@example.com&other=value#section /?%";
+        for resource in ["user", "team"] {
+            let url = info_url("https://gw.example.com/litellm", resource, id).unwrap();
+
+            assert_eq!(url.path(), format!("/litellm/{}/info", resource));
+            assert_eq!(url.fragment(), None);
+            assert_eq!(
+                url.query_pairs().collect::<Vec<_>>(),
+                [(format!("{}_id", resource).into(), id.into())]
+            );
+        }
+    }
 
     #[test]
     fn deserialize_key_info() {

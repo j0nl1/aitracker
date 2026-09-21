@@ -175,30 +175,18 @@ pub fn detect_credentials(provider: &Provider) -> bool {
         Provider::Claude => {
             let claude_dir = std::env::var("CLAUDE_CONFIG_DIR")
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| {
-                    dirs::home_dir()
-                        .unwrap_or_default()
-                        .join(".claude")
-                });
+                .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".claude"));
             claude_dir.join(".credentials.json").exists()
         }
         Provider::Codex => {
             let codex_dir = std::env::var("CODEX_HOME")
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| {
-                    dirs::home_dir()
-                        .unwrap_or_default()
-                        .join(".codex")
-                });
+                .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".codex"));
             codex_dir.join("auth.json").exists()
         }
-        Provider::Copilot => {
-            std::env::var("GITHUB_TOKEN").is_ok() || which_exists("gh")
-        }
+        Provider::Copilot => std::env::var("GITHUB_TOKEN").is_ok() || which_exists("gh"),
         Provider::Gemini => {
-            let gemini_dir = dirs::home_dir()
-                .unwrap_or_default()
-                .join(".gemini");
+            let gemini_dir = dirs::home_dir().unwrap_or_default().join(".gemini");
             gemini_dir.join("oauth_creds.json").exists()
         }
         Provider::Warp => std::env::var("WARP_TOKEN").is_ok(),
@@ -247,11 +235,7 @@ pub fn detect_credentials(provider: &Provider) -> bool {
 
 fn which_exists(cmd: &str) -> bool {
     std::env::var_os("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| {
-                dir.join(cmd).is_file()
-            })
-        })
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(cmd).is_file()))
         .unwrap_or(false)
 }
 
@@ -271,7 +255,9 @@ pub fn build_selectable_list() -> Vec<SelectableProvider> {
 
 /// Build the list of selectable providers with pre-checked state from existing config.
 /// Providers in the config use their `enabled` flag; new providers default to unchecked.
-pub fn build_selectable_list_from_config(config: &crate::core::config::AppConfig) -> Vec<SelectableProvider> {
+pub fn build_selectable_list_from_config(
+    config: &crate::core::config::AppConfig,
+) -> Vec<SelectableProvider> {
     Provider::all()
         .iter()
         .filter(|p| !p.is_stub())
@@ -310,7 +296,7 @@ mod tests {
     #[test]
     fn build_selectable_list_excludes_stubs() {
         let items = build_selectable_list();
-        assert_eq!(items.len(), 36);
+        assert_eq!(items.len(), 34);
     }
 
     #[test]
@@ -322,6 +308,8 @@ mod tests {
         assert!(ids.contains(&"synthetic"));
         assert!(!ids.contains(&"cursor"));
         assert!(!ids.contains(&"ollama"));
+        assert!(!ids.contains(&"azure_openai"));
+        assert!(!ids.contains(&"doubao"));
     }
 
     #[test]
@@ -339,7 +327,7 @@ mod tests {
     fn auto_detect_providers_returns_vec() {
         // Just verify it runs without panic — actual detection depends on environment
         let detected = auto_detect_providers();
-        assert!(detected.len() <= 36);
+        assert!(detected.len() <= 34);
     }
 
     fn test_items(n: usize) -> Vec<SelectableProvider> {

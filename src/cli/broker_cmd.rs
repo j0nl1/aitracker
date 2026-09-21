@@ -21,6 +21,7 @@ use crate::core::config::AppConfig;
 use crate::core::providers::Provider;
 
 const BROKER_TOKEN_ENV: &str = "AIT_BROKER_TOKEN";
+const BROKER_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 struct CachedUsage {
@@ -158,7 +159,7 @@ pub async fn serve(
         .with_context(|| format!("{} is required to run the broker", BROKER_TOKEN_ENV))?;
     validate_broker_token(&token)?;
 
-    let config = AppConfig::load().unwrap_or_default();
+    let config = AppConfig::load().context("Failed to load broker configuration")?;
     let providers: Vec<_> = config
         .providers
         .iter()
@@ -206,6 +207,41 @@ pub async fn serve(
     result.context("Broker server failed")
 }
 
+fn build_broker_client(builder: reqwest::ClientBuilder) -> Result<reqwest::Client> {
+    builder
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(BROKER_REQUEST_TIMEOUT)
+        .build()
+        .context("Failed to initialize the broker client")
+}
+
+async fn fetch_broker_usage(
+    client: &reqwest::Client,
+    endpoint: reqwest::Url,
+    token: &str,
+) -> Result<BrokerResponse> {
+    let response = client
+        .get(endpoint)
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("Failed to connect to the usage broker")?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        anyhow::bail!("Broker rejected AIT_BROKER_TOKEN");
+    }
+    if response.status().is_redirection() {
+        anyhow::bail!("Broker returned a redirect; redirects are not allowed");
+    }
+    let response = response
+        .error_for_status()
+        .context("Broker returned an error")?;
+    response
+        .json()
+        .await
+        .context("Failed to decode the broker response")
+}
+
 pub async fn client_usage(
     url: String,
     provider: Option<String>,
@@ -217,22 +253,8 @@ pub async fn client_usage(
     let mut endpoint = parse_loopback_url(&url)?;
     endpoint.set_path("/v1/usage");
 
-    let response = reqwest::Client::new()
-        .get(endpoint)
-        .bearer_auth(token)
-        .send()
-        .await
-        .context("Failed to connect to the usage broker")?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        anyhow::bail!("Broker rejected AIT_BROKER_TOKEN");
-    }
-    let response = response
-        .error_for_status()
-        .context("Broker returned an error")?;
-    let mut payload: BrokerResponse = response
-        .json()
-        .await
-        .context("Failed to decode the broker response")?;
+    let client = build_broker_client(reqwest::Client::builder())?;
+    let mut payload = fetch_broker_usage(&client, endpoint, &token).await?;
 
     if let Some(provider_id) = provider {
         let provider = Provider::from_id(&provider_id)
@@ -291,6 +313,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tokio::sync::RwLock;
     use tower::ServiceExt;
@@ -300,6 +323,73 @@ mod tests {
             generated_at: "2026-08-18T12:00:00Z".parse().unwrap(),
             providers: Vec::new(),
         }))
+    }
+
+    async fn test_server(app: Router) -> (reqwest::Url, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1/usage", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (endpoint, task)
+    }
+
+    #[tokio::test]
+    async fn broker_client_bypasses_configured_proxies() {
+        let token = "0123456789abcdef0123456789abcdef";
+        let proxy_hits = Arc::new(AtomicUsize::new(0));
+        let hits = Arc::clone(&proxy_hits);
+        let proxy = Router::new().fallback(move || async move {
+            hits.fetch_add(1, Ordering::SeqCst);
+            StatusCode::IM_A_TEAPOT
+        });
+        let (proxy_endpoint, proxy_task) = test_server(proxy).await;
+        let (endpoint, broker_task) =
+            test_server(broker_router(token.to_string(), test_cache(), 120)).await;
+        let client = build_broker_client(
+            reqwest::Client::builder().proxy(reqwest::Proxy::all(proxy_endpoint.as_str()).unwrap()),
+        )
+        .unwrap();
+
+        let payload = fetch_broker_usage(&client, endpoint, token).await.unwrap();
+
+        assert!(payload.providers.is_empty());
+        assert_eq!(proxy_hits.load(Ordering::SeqCst), 0);
+        broker_task.abort();
+        proxy_task.abort();
+    }
+
+    #[tokio::test]
+    async fn broker_client_rejects_redirects_without_following_them() {
+        let redirect_hits = Arc::new(AtomicUsize::new(0));
+        let hits = Arc::clone(&redirect_hits);
+        let app = Router::new()
+            .route(
+                "/v1/usage",
+                get(|| async { (StatusCode::FOUND, [("location", "/redirected")], "redirect") }),
+            )
+            .route(
+                "/redirected",
+                get(move || async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::NO_CONTENT
+                }),
+            );
+        let (endpoint, task) = test_server(app).await;
+        let client = build_broker_client(reqwest::Client::builder()).unwrap();
+
+        let error = fetch_broker_usage(&client, endpoint, "0123456789abcdef0123456789abcdef")
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Broker returned a redirect; redirects are not allowed"
+        );
+        assert_eq!(redirect_hits.load(Ordering::SeqCst), 0);
+        task.abort();
     }
 
     #[tokio::test]

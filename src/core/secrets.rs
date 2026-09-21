@@ -16,11 +16,21 @@ fn line_defines_key(line: &str, key: &str) -> bool {
 
 pub fn update_env_contents(contents: &str, key: &str, value: Option<&str>) -> String {
     let replacement = value.map(|secret| {
-        format!(
-            "{}={}\n",
-            key,
-            serde_json::to_string(secret).expect("serializing a string cannot fail")
-        )
+        let mut quoted = String::with_capacity(secret.len() + 2);
+        quoted.push('"');
+        for character in secret.chars() {
+            match character {
+                '\\' => quoted.push_str("\\\\"),
+                '"' => quoted.push_str("\\\""),
+                '$' => quoted.push_str("\\$"),
+                '\n' => quoted.push_str("\\n"),
+                // dotenvy does not recognize JSON escapes such as \t or \r.
+                // Keep these characters literal inside the quoted value.
+                other => quoted.push(other),
+            }
+        }
+        quoted.push('"');
+        format!("{}={}\n", key, quoted)
     });
     let mut output =
         String::with_capacity(contents.len() + replacement.as_deref().map_or(0, str::len));
@@ -162,11 +172,44 @@ mod tests {
     fn stored_value_round_trips_through_dotenv_parser() {
         let path =
             std::env::temp_dir().join(format!("ait-secrets-roundtrip-test-{}", std::process::id()));
-        set_env_value(&path, "AIT_TEST_SECRET", Some("spaces and \"quotes\"")).unwrap();
-        let value = read_env_value(&path, "AIT_TEST_SECRET").unwrap();
-        std::fs::remove_file(path).unwrap();
+        write_env_file(
+            &path,
+            "# managed locally\nAIT_TEST_REFERENCE=substituted\nAIT_TEST_SECRET=old\nOTHER_KEY='unchanged'\n",
+        )
+        .unwrap();
 
-        assert_eq!(value.as_deref(), Some("spaces and \"quotes\""));
+        for secret in [
+            "",
+            " spaces and \"quotes\" and 'apostrophes' ",
+            "$AIT_TEST_REFERENCE ${AIT_TEST_REFERENCE} $HOME ${PATH} $",
+            "backslashes \\ \\n \\t \\r \\$HOME \\\" trailing\\",
+            "\tleading tab\ttab inside\t",
+            "\rcarriage\rreturn\r",
+            "\nline one\nline two\r\n",
+            "\nOTHER_KEY=overwritten\n",
+            "# hash = equal \u{00e9} \u{4e2d} \u{1f680}",
+            "\u{0008}\u{000c}\u{001b}",
+        ] {
+            set_env_value(&path, "AIT_TEST_SECRET", Some(secret)).unwrap();
+            assert_eq!(
+                read_env_value(&path, "AIT_TEST_SECRET").unwrap().as_deref(),
+                Some(secret)
+            );
+            assert_eq!(
+                read_env_value(&path, "OTHER_KEY").unwrap().as_deref(),
+                Some("unchanged")
+            );
+            let contents = std::fs::read_to_string(&path).unwrap();
+            assert!(contents.starts_with("# managed locally\nAIT_TEST_REFERENCE=substituted\n"));
+            assert!(contents.ends_with("OTHER_KEY='unchanged'\n"));
+        }
+
+        set_env_value(&path, "AIT_TEST_SECRET", None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# managed locally\nAIT_TEST_REFERENCE=substituted\nOTHER_KEY='unchanged'\n"
+        );
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

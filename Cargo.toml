@@ -2,6 +2,7 @@
 name = "aitracker"
 version = "0.2.2"
 edition = "2021"
+rust-version = "1.88"
 description = "AI provider usage tracking CLI"
 license = "MIT"
 repository = "https://github.com/j0nl1/aitracker"
